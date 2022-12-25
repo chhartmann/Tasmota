@@ -7,9 +7,46 @@
 
 VitoWiFi_setProtocol(P300);
 
-DPTemp outsideTemp("outsideTemp", "boiler", 0x5525);
-DPTemp boilerTemp("boilertemp", "boiler", 0x0810);
-DPStat pumpStat("pump", "heating1", 0x2906);
+DPTemp VitoTempAussen("Aussentemperatur", "temperatures", 0x0800);
+DPTemp VitoTempSpeicher("Wassertemperatur", "temperatures", 0x0812);
+DPTemp VitoTempVLSoll("Soll-Vorlauftemperatur", "temperatures", 0x2544);
+DPTemp VitoTempRLIst("Ist-Ruecklauftemperatur", "temperatures", 0x0808);
+DPTemp VitoTempKesselSoll("Soll-Kesseltemperatur", "temperatures", 0x555A);
+DPCount VitoStartsBrenner("pump", "burner", 0x088A);
+DPCount VitoLaufzeitBrenner("pump", "burner", 0x08A7); // DPHours?
+
+DPStat VitoStatusStoerung("Status", "status", 0x08A2);
+
+//TODO enum und zeit
+//DPxxx getVitoStoerung1("Stoerung-History1", "error-history", 0x7507)
+//DPxxx getVitoStoerung2("Stoerung-History2", "error-history", 0x7510)
+//DPxxx getVitoStoerung3("Stoerung-History3", "error-history", 0x7519)
+//DPxxx getVitoStoerung4("Stoerung-History4", "error-history", 0x7522)
+//DPxxx getVitoStoerung5("Stoerung-History5", "error-history", 0x752B)
+//DPxxx getVitoStoerung6("Stoerung-History6", "error-history", 0x7534)
+//DPxxx getVitoStoerung7("Stoerung-History7", "error-history", 0x753D)
+//DPxxx getVitoStoerung8("Stoerung-History8", "error-history", 0x7546)
+//DPxxx getVitoStoerung9("Stoerung-History9", "error-history", 0x754F)
+//DPxxx getVitoStoerung10("Stoerung-History10", "error-history", 0x7558)
+
+//TODO getVitoSystemzeit 088E len 8
+
+DPTimer VitoTimerMoHeizen("Heizen-Mo", "timer-heating", 0x2000);
+DPTimer VitoTimerDiHeizen("Heizen-Di", "timer-heating", 0x2008);
+DPTimer VitoTimerMiHeizen("Heizen-Mi", "timer-heating", 0x2010);
+DPTimer VitoTimerDoHeizen("Heizen-Do", "timer-heating", 0x2008);
+DPTimer VitoTimerFrHeizen("Heizen-Fr", "timer-heating", 0x2020);
+DPTimer VitoTimerSaHeizen("Heizen-Sa", "timer-heating", 0x2008);
+DPTimer VitoTimerSoHeizen("Heizen-So", "timer-heating", 0x2030);
+
+DPTimer VitoTimerDiWW("Warmwasser-Di", "timer-water", 0x2108);
+DPTimer VitoTimerMiWW("Warmwasser-Mi", "timer-water", 0x2110);
+DPTimer VitoTimerMoWW("Warmwasser-Mo", "timer-water", 0x2100);
+DPTimer VitoTimerDoWW("Warmwasser-Do", "timer-water", 0x2108);
+DPTimer VitoTimerFrWW("Warmwasser-Fr", "timer-water", 0x2120);
+DPTimer VitoTimerSaWW("Warmwasser-Sa", "timer-water", 0x2108);
+DPTimer VitoTimerSoWW("Warmwasser-So", "timer-water", 0x2130);
+
 
 class LogPrinter : public Print {
   std::string line;
