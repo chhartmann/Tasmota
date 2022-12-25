@@ -1,6 +1,7 @@
 #ifdef USE_VITO
 
 #include "VitoWiFi.h"
+#include <string>
 
 #define XSNS_98              98
 
@@ -11,27 +12,47 @@ DPTemp boilerTemp("boilertemp", "boiler", 0x0810);
 DPStat pumpStat("pump", "heating1", 0x2906);
 
 class LogPrinter : public Print {
-
-    virtual size_t write(uint8_t) {
-      AddLog(LOG_LEVEL_INFO, PSTR("VTO: not implemented"));
-      return 1;
-    };
-    virtual size_t write(const uint8_t *buffer, size_t size) {
-      AddLog(LOG_LEVEL_INFO, "VTO: %s", (const char*)buffer);
-      return size;
-    };
+  std::string line;
+  void print_on_newline() {
+    if (line.back() == '\n') {
+      AddLog(LOG_LEVEL_INFO, "VTO: %s", (const char*)line.c_str());
+      line.clear();
+    }
+  }
+  virtual size_t write(uint8_t c) {
+    line += (char)c;
+    print_on_newline();
+    return 1;
+  };
+  virtual size_t write(const uint8_t *buffer, size_t size) {
+    line += (char*)buffer;
+    print_on_newline();
+    return size;
+  };
 };
 
 LogPrinter logPrinter;
 
-void VitoCommand() {
-  VitoWiFi.readAll();
-  AddLog(LOG_LEVEL_INFO, PSTR("VTO: Command received"));
-  ResponseCmndChar("yo");
+void VitoCommandRead() {
+  if (strlen(XdrvMailbox.data) == 0) {
+    VitoWiFi.readAll();
+    ResponseCmndChar("ReadAll");
+  } else {
+    VitoWiFi.readGroup(XdrvMailbox.data);
+    ResponseCmndChar("ReadGroup");
+  }
 }
 
-const char VitoCommandsString[] PROGMEM = "Vito|DoIt|Dump";
-void (* const VitoCommandsList[])(void) PROGMEM = { &VitoCommand, &VitoCommand };
+void VitoCommandLogOn() {
+  VitoWiFi.enableLogger();
+}
+
+void VitoCommandLogOff() {
+  VitoWiFi.disableLogger();
+}
+
+const char VitoCommandsString[] PROGMEM = "Vito|Read|LogOn|LogOff";
+void (* const VitoCommandsList[])(void) PROGMEM = { &VitoCommandRead, &VitoCommandLogOn, &VitoCommandLogOff };
 
 void globalCallbackHandler(const class IDatapoint& dp, class DPValue value) {
   char value_str[15] = {0};
@@ -50,24 +71,19 @@ bool Xsns98(uint8_t function) {
   if (FUNC_INIT == function) {
   }
   switch (function) {
-    case FUNC_PRE_INIT:
-      ClaimSerial();
     case FUNC_INIT:
+      ClaimSerial();
       VitoWiFi.setLogger(&logPrinter);
       VitoWiFi.enableLogger();
       VitoWiFi.setup(&Serial);
       VitoWiFi.setGlobalCallback(globalCallbackHandler);
       break;
     case FUNC_EVERY_50_MSECOND:
-      break;
-    case FUNC_EVERY_SECOND:
       VitoWiFi.loop();
       break;
+    case FUNC_EVERY_SECOND:
+      break;
     case FUNC_COMMAND_SENSOR:
-      if (XSNS_98 == XdrvMailbox.index) {
-        VitoCommand();
-        result = true;
-      }
       break;
       case FUNC_COMMAND:
         DecodeCommand(VitoCommandsString, VitoCommandsList);
