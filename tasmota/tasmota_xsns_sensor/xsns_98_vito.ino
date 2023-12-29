@@ -6,9 +6,11 @@
 #define XSNS_98              98
 
 // TODOs:
+// - Fix write timer
+// - Fix datapoint addresses
+// - Send response via MQTT
+// - Add possibility to set system time to current time
 // - Add visualisation in web UI of values defined in a list
-// - Add button and function for "Warmwasser"
-// - Add button for "Set system time to current time"
 
 VitoWiFi_setProtocol(P300);
 
@@ -42,9 +44,9 @@ DPCycleTime VitoTimerFrHeizen("Heizen-Fr", "timer-heating", 0x2020);
 DPCycleTime VitoTimerSaHeizen("Heizen-Sa", "timer-heating", 0x2008);
 DPCycleTime VitoTimerSoHeizen("Heizen-So", "timer-heating", 0x2030);
 
+DPCycleTime VitoTimerMoWW("Warmwasser-Mo", "timer-water", 0x2100);
 DPCycleTime VitoTimerDiWW("Warmwasser-Di", "timer-water", 0x2108);
 DPCycleTime VitoTimerMiWW("Warmwasser-Mi", "timer-water", 0x2110);
-DPCycleTime VitoTimerMoWW("Warmwasser-Mo", "timer-water", 0x2100);
 DPCycleTime VitoTimerDoWW("Warmwasser-Do", "timer-water", 0x2108);
 DPCycleTime VitoTimerFrWW("Warmwasser-Fr", "timer-water", 0x2120);
 DPCycleTime VitoTimerSaWW("Warmwasser-Sa", "timer-water", 0x2108);
@@ -74,25 +76,89 @@ class LogPrinter : public Print {
 LogPrinter logPrinter;
 
 void VitoCommandRead() {
-  if (strlen(XdrvMailbox.data) == 0) {
+  if (strcmp(XdrvMailbox.data, "all") == 0) {
     VitoWiFi.readAll();
-    ResponseCmndChar("ReadAll");
+    ResponseCmndDone();
   } else {
-    VitoWiFi.readGroup(XdrvMailbox.data);
-    ResponseCmndChar("ReadGroup");
+    const std::vector<IDatapoint*>& v = VitoTempAussen.getCollection();
+    bool found = false;
+    for (uint8_t i = 0; (i < v.size()) && (found == false); ++i) {
+      if (strcmp(XdrvMailbox.data, v[i]->getName()) == 0) {
+        VitoWiFi.readDatapoint(*v[i]);
+        found = true;
+      } else if (strcmp(XdrvMailbox.data, v[i]->getGroup()) == 0) {
+        VitoWiFi.readGroup(XdrvMailbox.data);
+        found = true;
+      }
+    }
+    if (found) {
+      ResponseCmndDone();
+    }
+  }
+}
+
+void VitoCommandWriteTimer() {
+  if (ArgC() > 0) {
+    char sub_string[XdrvMailbox.data_len];
+    (void)ArgV(sub_string, 1);
+
+    const std::vector<IDatapoint*>& v = VitoTempAussen.getCollection();
+    bool found = false;
+    for (uint8_t i = 0; i < (v.size()) && (found == false); ++i) {
+      if (strcmp(sub_string, v[i]->getName()) == 0) {
+        cycletime_s ct;
+        for (uint8_t para = 0; para < 4; ++para) {
+          if (ArgC() > (para + 1)) {
+            (void)ArgV(sub_string, 2 + para);
+          } else {
+            strcpy_P(sub_string, PSTR("FF:FF-FF:FF"));
+          }
+          AddLog(LOG_LEVEL_INFO, "VTO: Para %s", sub_string);
+
+          sscanf(&sub_string[0], "%X", &ct.cycle[para].from_hour);
+          sscanf(&sub_string[3], "%X", &ct.cycle[para].from_minute);
+          sscanf(&sub_string[6], "%X", &ct.cycle[para].till_hour);
+          sscanf(&sub_string[9], "%X", &ct.cycle[para].till_minute);
+        }
+
+        // debug log
+        char c[60];
+        size_t offset = 0;
+        for (uint8_t para = 0; para < 4; ++para) {
+          uint8_t from_hour = ct.cycle[para].from_hour;
+          uint8_t from_minute = ct.cycle[para].from_minute;
+          uint8_t till_hour = ct.cycle[para].till_hour;
+          uint8_t till_minute = ct.cycle[para].till_minute;
+          if (from_hour == 0xff || from_minute == 0xff || till_hour == 0xff || till_minute == 0xff) {
+            offset += sprintf(c + offset, "%s", "XX:XX-XX:XX ");
+          } else {
+            offset += sprintf(c + offset, "%02u:%02u-%02u:%02u ", from_hour, from_minute, till_hour, till_minute);
+          }
+        }
+        c[offset - 1] = '\0';
+        AddLog(LOG_LEVEL_INFO, "VTO: Write %s", c);
+
+        VitoWiFi.writeDatapoint(*v[i], DPValue(ct));
+      }
+    }
+    if (found) {
+      ResponseCmndDone();
+    }
   }
 }
 
 void VitoCommandLogOn() {
   VitoWiFi.enableLogger();
+  ResponseCmndDone();
 }
 
 void VitoCommandLogOff() {
   VitoWiFi.disableLogger();
+  ResponseCmndDone();
 }
 
-const char VitoCommandsString[] PROGMEM = "Vito|Read|LogOn|LogOff";
-void (* const VitoCommandsList[])(void) PROGMEM = { &VitoCommandRead, &VitoCommandLogOn, &VitoCommandLogOff };
+const char VitoCommandsString[] PROGMEM = "Vito|Read|WriteTimer|LogOn|LogOff";
+void (* const VitoCommandsList[])(void) PROGMEM = { &VitoCommandRead, &VitoCommandWriteTimer, &VitoCommandLogOn, &VitoCommandLogOff };
 
 void globalCallbackHandler(const class IDatapoint& dp, class DPValue value) {
   char value_str[30] = {0};
@@ -100,6 +166,30 @@ void globalCallbackHandler(const class IDatapoint& dp, class DPValue value) {
   AddLog(LOG_LEVEL_INFO, "VTO: %s %s %s", dp.getGroup(), dp.getName(), value_str);
 }
 
+void VitoDrvInit() {
+  ClaimSerial();
+
+  VitoSystemzeit.setWriteable(true);
+   VitoTimerDiHeizen.setWriteable(true);
+   VitoTimerMoHeizen.setWriteable(true);
+   VitoTimerMiHeizen.setWriteable(true);
+   VitoTimerDoHeizen.setWriteable(true);
+   VitoTimerFrHeizen.setWriteable(true);
+   VitoTimerSaHeizen.setWriteable(true);
+   VitoTimerSoHeizen.setWriteable(true);
+   VitoTimerMoWW.setWriteable(true);
+   VitoTimerDiWW.setWriteable(true);
+   VitoTimerMiWW.setWriteable(true);
+   VitoTimerDoWW.setWriteable(true);
+   VitoTimerFrWW.setWriteable(true);
+   VitoTimerSaWW.setWriteable(true);
+   VitoTimerSoWW.setWriteable(true);
+
+  VitoWiFi.setLogger(&logPrinter);
+  // VitoWiFi.enableLogger();
+  VitoWiFi.setup(&Serial);
+  VitoWiFi.setGlobalCallback(globalCallbackHandler);
+}
 
 /*********************************************************************************************\
  * Interface
@@ -112,11 +202,7 @@ bool Xsns98(uint8_t function) {
   }
   switch (function) {
     case FUNC_INIT:
-      ClaimSerial();
-      VitoWiFi.setLogger(&logPrinter);
-//      VitoWiFi.enableLogger();
-      VitoWiFi.setup(&Serial);
-      VitoWiFi.setGlobalCallback(globalCallbackHandler);
+      VitoDrvInit();
       break;
     case FUNC_EVERY_50_MSECOND:
       VitoWiFi.loop();
