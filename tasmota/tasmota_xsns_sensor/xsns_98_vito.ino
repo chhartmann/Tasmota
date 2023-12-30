@@ -5,12 +5,6 @@
 
 #define XSNS_98              98
 
-// TODOs:
-// - Fix datapoint addresses
-// - Send response via MQTT
-// - Add possibility to set system time to current time
-// - Add visualisation in web UI of values defined in a list
-
 VitoWiFi_setProtocol(P300);
 
 DPTemp VitoTempAussen("Aussentemperatur", "temperatures", 0x0800);
@@ -18,10 +12,10 @@ DPTemp VitoTempSpeicher("Wassertemperatur", "temperatures", 0x0812);
 DPTemp VitoTempVLSoll("Soll-Vorlauftemperatur", "temperatures", 0x2544);
 DPTemp VitoTempRLIst("Ist-Ruecklauftemperatur", "temperatures", 0x0808);
 DPTemp VitoTempKesselSoll("Soll-Kesseltemperatur", "temperatures", 0x555A);
-DPUnsignedInt VitoStartsBrenner("pump", "burner", 0x088A);
-DPHours VitoLaufzeitBrenner("pump", "burner", 0x08A7);
+DPUnsignedInt VitoStartsBrenner("Brenner-Starts", "burner", 0x088A);
+DPHours VitoLaufzeitBrenner("Brenner-Laufzeit", "burner", 0x08A7);
 
-DPByte VitoStatusStoerung("Status", "status", 0x08A2);
+DPByte VitoStatusStoerung("Status", "status", 0x0A82);
 DPTimeStamp VitoSystemzeit("Systemzeit", "status", 0x088E);
 
 DPErrHist getVitoStoerung1("Stoerung-History1", "error-history", 0x7507);
@@ -38,17 +32,17 @@ DPErrHist getVitoStoerung10("Stoerung-History10", "error-history", 0x7558);
 DPCycleTime VitoTimerMoHeizen("Heizen-Mo", "timer-heating", 0x2000);
 DPCycleTime VitoTimerDiHeizen("Heizen-Di", "timer-heating", 0x2008);
 DPCycleTime VitoTimerMiHeizen("Heizen-Mi", "timer-heating", 0x2010);
-DPCycleTime VitoTimerDoHeizen("Heizen-Do", "timer-heating", 0x2008);
+DPCycleTime VitoTimerDoHeizen("Heizen-Do", "timer-heating", 0x2018);
 DPCycleTime VitoTimerFrHeizen("Heizen-Fr", "timer-heating", 0x2020);
-DPCycleTime VitoTimerSaHeizen("Heizen-Sa", "timer-heating", 0x2008);
+DPCycleTime VitoTimerSaHeizen("Heizen-Sa", "timer-heating", 0x2028);
 DPCycleTime VitoTimerSoHeizen("Heizen-So", "timer-heating", 0x2030);
 
 DPCycleTime VitoTimerMoWW("Warmwasser-Mo", "timer-water", 0x2100);
 DPCycleTime VitoTimerDiWW("Warmwasser-Di", "timer-water", 0x2108);
 DPCycleTime VitoTimerMiWW("Warmwasser-Mi", "timer-water", 0x2110);
-DPCycleTime VitoTimerDoWW("Warmwasser-Do", "timer-water", 0x2108);
+DPCycleTime VitoTimerDoWW("Warmwasser-Do", "timer-water", 0x2118);
 DPCycleTime VitoTimerFrWW("Warmwasser-Fr", "timer-water", 0x2120);
-DPCycleTime VitoTimerSaWW("Warmwasser-Sa", "timer-water", 0x2108);
+DPCycleTime VitoTimerSaWW("Warmwasser-Sa", "timer-water", 0x2128);
 DPCycleTime VitoTimerSoWW("Warmwasser-So", "timer-water", 0x2130);
 
 DPValue backupVal;
@@ -159,6 +153,15 @@ void VitoCommandRestoreTimer() {
   }
 }
 
+void VitoSetCurrentTime() {
+  time_t rawtime;
+  struct tm * timeinfo;
+  time ( &rawtime );
+  timeinfo = localtime ( &rawtime );
+  VitoWiFi.writeDatapoint(VitoSystemzeit, DPValue(rawtime));
+  ResponseCmndDone();
+}
+
 void VitoCommandLogOn() {
   VitoWiFi.enableLogger();
   ResponseCmndDone();
@@ -169,13 +172,34 @@ void VitoCommandLogOff() {
   ResponseCmndDone();
 }
 
-const char VitoCommandsString[] PROGMEM = "Vito|Read|WriteTimer|RestoreTimer|LogOn|LogOff";
-void (* const VitoCommandsList[])(void) PROGMEM = { &VitoCommandRead, &VitoCommandWriteTimer, &VitoCommandRestoreTimer, &VitoCommandLogOn, &VitoCommandLogOff };
+const char VitoCommandsString[] PROGMEM = "Vito|Read|WriteTimer|RestoreTimer|SetCurrentTime|LogOn|LogOff";
+void (* const VitoCommandsList[])(void) PROGMEM = { &VitoCommandRead, &VitoCommandWriteTimer, &VitoCommandRestoreTimer, &VitoSetCurrentTime, &VitoCommandLogOn, &VitoCommandLogOff };
 
 void globalCallbackHandler(const class IDatapoint& dp, class DPValue value) {
   char value_str[60] = {0};
+  char mqtt_data[100] = {0};
   value.getString(value_str, sizeof(value_str));
+  snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("{\"Vito\":{\"Datapoint\":%s, \"Value\":%s}}"), dp.getName(), value_str);
+  MqttPublishPrefixTopic_P(RESULT_OR_STAT, mqtt_data);
   AddLog(LOG_LEVEL_INFO, "VTO: %s %s %s", dp.getGroup(), dp.getName(), value_str);
+}
+
+void VitoWebserver() {
+  const std::vector<IDatapoint*>& v = VitoTempAussen.getCollection();
+
+//  WSContentSend_P("<table border=\"1\"><tr><th>Group</th><th>Datapoint</th><th>Value</th></tr>");
+ WSContentSend_P("<table border=\"1\"><tr><th>Datapoint</th><th>Value</th></tr>");
+
+  for (uint8_t i = 0; i < v.size(); ++i) {
+    char val[100] = {0};
+    val[0] = '-';
+    DPValue dpVal = v[i]->getLastValue();
+    dpVal.getString(val, sizeof(val));
+//    WSContentSend_P("<tr><td>%s</td><td>%s</td><td>%s</td></tr>", v[i]->getGroup(), v[i]->getName(), val);
+   WSContentSend_P("<tr><td>%s</td><td>%s</td></tr>", v[i]->getName(), val);
+  }
+
+  WSContentSend_P("</table>");
 }
 
 void VitoDrvInit() {
@@ -229,7 +253,7 @@ bool Xsns98(uint8_t function) {
         break;
 #ifdef USE_WEBSERVER
     case FUNC_WEB_SENSOR:
-      WSContentSend_P("Hello World");
+      VitoWebserver();
       break;
 #endif  // USE_WEBSERVER
   }
