@@ -6,7 +6,8 @@
 #define XSNS_98              98
 
 // TODOs:
-// - Fix write timer
+// - Backup value before write
+// - Restore command or get backup value command
 // - Fix datapoint addresses
 // - Send response via MQTT
 // - Add possibility to set system time to current time
@@ -103,45 +104,47 @@ void VitoCommandWriteTimer() {
     (void)ArgV(sub_string, 1);
 
     const std::vector<IDatapoint*>& v = VitoTempAussen.getCollection();
-    bool found = false;
-    for (uint8_t i = 0; i < (v.size()) && (found == false); ++i) {
+    IDatapoint* datapoint = nullptr;
+    for (uint8_t i = 0; i < (v.size()) && (datapoint == nullptr); ++i) {
       if (strcmp(sub_string, v[i]->getName()) == 0) {
-        cycletime_s ct;
-        for (uint8_t para = 0; para < 4; ++para) {
-          if (ArgC() > (para + 1)) {
-            (void)ArgV(sub_string, 2 + para);
-          } else {
-            strcpy_P(sub_string, PSTR("FF:FF-FF:FF"));
-          }
-          AddLog(LOG_LEVEL_INFO, "VTO: Para %s", sub_string);
-
-          sscanf(&sub_string[0], "%X", &ct.cycle[para].from_hour);
-          sscanf(&sub_string[3], "%X", &ct.cycle[para].from_minute);
-          sscanf(&sub_string[6], "%X", &ct.cycle[para].till_hour);
-          sscanf(&sub_string[9], "%X", &ct.cycle[para].till_minute);
-        }
-
-        // debug log
-        char c[60];
-        size_t offset = 0;
-        for (uint8_t para = 0; para < 4; ++para) {
-          uint8_t from_hour = ct.cycle[para].from_hour;
-          uint8_t from_minute = ct.cycle[para].from_minute;
-          uint8_t till_hour = ct.cycle[para].till_hour;
-          uint8_t till_minute = ct.cycle[para].till_minute;
-          if (from_hour == 0xff || from_minute == 0xff || till_hour == 0xff || till_minute == 0xff) {
-            offset += sprintf(c + offset, "%s", "XX:XX-XX:XX ");
-          } else {
-            offset += sprintf(c + offset, "%02u:%02u-%02u:%02u ", from_hour, from_minute, till_hour, till_minute);
-          }
-        }
-        c[offset - 1] = '\0';
-        AddLog(LOG_LEVEL_INFO, "VTO: Write %s", c);
-
-        VitoWiFi.writeDatapoint(*v[i], DPValue(ct));
+        datapoint = v[i];
       }
     }
-    if (found) {
+
+    if (datapoint != nullptr) {
+      cycletime_s ct;
+      const char* argv = nullptr;
+      const char* defaultArg = "FF:FF-FF:FF";
+      for (uint8_t para = 0; para < 4; ++para) {
+        argv = defaultArg;
+        if (ArgC() > (para + 1)) {
+          argv = ArgV(sub_string, 2 + para);
+          AddLog(LOG_LEVEL_INFO, "VTO: Received Para %s", argv);
+        };
+        AddLog(LOG_LEVEL_INFO, "VTO: Para %s", argv);
+
+        int v1, v2, v3, v4;
+        sscanf(argv, "%02x:%02x-%02x:%02x", &v1, &v2, &v3, &v4);
+        ct.cycle[para].from_hour = v1;
+        ct.cycle[para].from_minute = v2;
+        ct.cycle[para].till_hour = v3;
+        ct.cycle[para].till_minute = v4;
+      }
+
+      // debug log
+      char c[60];
+      size_t offset = 0;
+      for (uint8_t para = 0; para < 4; ++para) {
+        uint8_t from_hour = ct.cycle[para].from_hour;
+        uint8_t from_minute = ct.cycle[para].from_minute;
+        uint8_t till_hour = ct.cycle[para].till_hour;
+        uint8_t till_minute = ct.cycle[para].till_minute;
+        offset += sprintf(c + offset, "%02X:%02X-%02X:%02X ", from_hour, from_minute, till_hour, till_minute);
+      }
+      c[offset - 1] = '\0';
+      AddLog(LOG_LEVEL_INFO, "VTO: Write %s", c);
+
+      VitoWiFi.writeDatapoint(*datapoint, DPValue(ct));
       ResponseCmndDone();
     }
   }
