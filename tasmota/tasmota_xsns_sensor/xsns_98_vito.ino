@@ -6,7 +6,7 @@
 #define XSNS_98              98
 
 // Fixme
-// - encoding or decoding timer minutes is wrong
+// RestoreTimer command is not working
 // Maybe
 // - Web button for warmwasser
 // - Rule to read data periodically
@@ -100,7 +100,7 @@ void VitoCommandRead() {
 }
 
 void VitoCommandWriteTimer() {
-  if (ArgC() > 0) {
+  if (ArgC() > 1) {
     char sub_string[XdrvMailbox.data_len];
     (void)ArgV(sub_string, 1);
 
@@ -114,20 +114,21 @@ void VitoCommandWriteTimer() {
 
     if (datapoint != nullptr) {
       cycletime_s ct;
-      const char* argv = nullptr;
-      const char* defaultArg = "FF:FF-FF:FF";
       for (uint8_t para = 0; para < 4; ++para) {
-        argv = defaultArg;
         if (ArgC() > (para + 1)) {
-          argv = ArgV(sub_string, 2 + para);
-        };
-
-        int v1, v2, v3, v4;
-        sscanf(argv, "%02x:%02x-%02x:%02x", &v1, &v2, &v3, &v4);
-        ct.cycle[para].from_hour = v1;
-        ct.cycle[para].from_minute = v2;
-        ct.cycle[para].till_hour = v3;
-        ct.cycle[para].till_minute = v4;
+          const char* argv = ArgV(sub_string, 2 + para);
+          int v1, v2, v3, v4;
+          sscanf(argv, "%02u:%02u-%02u:%02u", &v1, &v2, &v3, &v4);
+          ct.cycle[para].from_hour = v1;
+          ct.cycle[para].from_minute = v2;
+          ct.cycle[para].till_hour = v3;
+          ct.cycle[para].till_minute = v4;
+        } else {
+          ct.cycle[para].from_hour = 0xff;
+          ct.cycle[para].from_minute = 0xff;
+          ct.cycle[para].till_hour = 0xff;
+          ct.cycle[para].till_minute = 0xff;
+        }
       }
 
       backupDp = datapoint;
@@ -135,19 +136,6 @@ void VitoCommandWriteTimer() {
 
       VitoWiFi.writeDatapoint(*datapoint, DPValue(ct));
       ResponseCmndDone();
-
-      // debug log
-      // char c[60];
-      // size_t offset = 0;
-      // for (uint8_t para = 0; para < 4; ++para) {
-      //   uint8_t from_hour = ct.cycle[para].from_hour;
-      //   uint8_t from_minute = ct.cycle[para].from_minute;
-      //   uint8_t till_hour = ct.cycle[para].till_hour;
-      //   uint8_t till_minute = ct.cycle[para].till_minute;
-      //   offset += sprintf(c + offset, "%02X:%02X-%02X:%02X ", from_hour, from_minute, till_hour, till_minute);
-      // }
-      // c[offset - 1] = '\0';
-      // AddLog(LOG_LEVEL_INFO, "VTO: Write %s", c);
     }
   }
 }
