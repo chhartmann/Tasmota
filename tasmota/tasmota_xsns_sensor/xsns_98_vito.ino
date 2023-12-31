@@ -5,6 +5,12 @@
 
 #define XSNS_98              98
 
+// Fixme
+// - encoding or decoding timer minutes is wrong
+// Maybe
+// - Web button for warmwasser
+// - Rule to read data periodically
+
 VitoWiFi_setProtocol(P300);
 
 DPTemp VitoTempAussen("Aussentemperatur", "temperatures", 0x0800);
@@ -177,10 +183,10 @@ void (* const VitoCommandsList[])(void) PROGMEM = { &VitoCommandRead, &VitoComma
 
 void globalCallbackHandler(const class IDatapoint& dp, class DPValue value) {
   char value_str[60] = {0};
-  char mqtt_data[100] = {0};
+  char mqtt_topic[40] = {};
+  snprintf_P(mqtt_topic, sizeof(mqtt_topic), PSTR("tele/%s/%s"), TasmotaGlobal.mqtt_topic, dp.getName());
   value.getString(value_str, sizeof(value_str));
-  snprintf_P(mqtt_data, sizeof(mqtt_data), PSTR("{\"Vito\":{\"Datapoint\":%s, \"Value\":%s}}"), dp.getName(), value_str);
-  MqttPublishPrefixTopic_P(RESULT_OR_STAT, mqtt_data);
+  MqttPublishPayload(mqtt_topic, value_str);
   AddLog(LOG_LEVEL_INFO, "VTO: %s %s %s", dp.getGroup(), dp.getName(), value_str);
 }
 
@@ -222,7 +228,7 @@ void VitoDrvInit() {
    VitoTimerSoWW.setWriteable(true);
 
   VitoWiFi.setLogger(&logPrinter);
-  // VitoWiFi.enableLogger();
+  VitoWiFi.disableLogger();
   VitoWiFi.setup(&Serial);
   VitoWiFi.setGlobalCallback(globalCallbackHandler);
 }
