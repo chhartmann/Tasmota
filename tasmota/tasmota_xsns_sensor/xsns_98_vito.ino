@@ -49,6 +49,7 @@ DPCycleTime VitoTimerSoWW("Warmwasser-So", "timer-water", 0x2130);
 
 DPValue backupVal;
 IDatapoint* backupDp = nullptr;
+bool wwTimerRestored = true;
 
 class LogPrinter : public Print {
   std::string line;
@@ -132,19 +133,17 @@ void VitoCommandWriteTimer() {
         }
       }
 
-      backupDp = datapoint;
-      backupVal = datapoint->getLastValue();
-
       VitoWiFi.writeDatapoint(*datapoint, DPValue(ct));
       ResponseCmndDone();
     }
   }
 }
 
-void VitoCommandRestoreTimer() {
-  if ((backupDp != nullptr) && (backupVal.getType() == CYCLETIME_T)) {
+void VitoCommandRestoreWWTimer() {
+  if ((backupDp != nullptr) && (backupVal.getType() == CYCLETIME_T) && (wwTimerRestored == false)) {
     VitoWiFi.writeDatapoint(*backupDp, backupVal);
     ResponseCmndDone();
+    wwTimerRestored = true;
   }
 }
 
@@ -156,11 +155,11 @@ void VitoCommandActivateWWToday() {
   const char *weekday[] = {"So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"};
   timeinfo->tm_wday;
   char dpName[] = "Warmwasser-XX";
-  strcpy(dpName + 11, weekday[0]);
+  strcpy(dpName + 11, weekday[timeinfo->tm_wday]);
 
   IDatapoint* datapoint = getDatapoint(dpName);
 
-  if (datapoint != nullptr)
+  if ((datapoint != nullptr) && (wwTimerRestored))
   {
     cycletime_s ct;
     for (uint8_t para = 0; para < 4; ++para) {
@@ -176,6 +175,7 @@ void VitoCommandActivateWWToday() {
 
     backupDp = datapoint;
     backupVal = datapoint->getLastValue();
+    wwTimerRestored = false;
 
     VitoWiFi.writeDatapoint(*datapoint, DPValue(ct));
     ResponseCmndDone();
@@ -201,8 +201,8 @@ void VitoCommandLogOff() {
   ResponseCmndDone();
 }
 
-const char VitoCommandsString[] PROGMEM = "Vito|Read|WriteTimer|RestoreTimer|ActivateWWToday|SetCurrentTime|LogOn|LogOff";
-void (* const VitoCommandsList[])(void) PROGMEM = { &VitoCommandRead, &VitoCommandWriteTimer, &VitoCommandRestoreTimer, &VitoCommandActivateWWToday, &VitoSetCurrentTime, &VitoCommandLogOn, &VitoCommandLogOff };
+const char VitoCommandsString[] PROGMEM = "Vito|Read|WriteTimer|RestoreWWTimer|ActivateWWToday|SetCurrentTime|LogOn|LogOff";
+void (* const VitoCommandsList[])(void) PROGMEM = { &VitoCommandRead, &VitoCommandWriteTimer, &VitoCommandRestoreWWTimer, &VitoCommandActivateWWToday, &VitoSetCurrentTime, &VitoCommandLogOn, &VitoCommandLogOff };
 
 void globalCallbackHandler(const class IDatapoint& dp, class DPValue value) {
   char value_str[60] = {0};
