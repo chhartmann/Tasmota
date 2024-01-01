@@ -5,11 +5,7 @@
 
 #define XSNS_98              98
 
-// Fixme
-// RestoreTimer command is not working
-// Maybe
-// - Web button for warmwasser
-// - Rule to read data periodically
+IDatapoint* getDatapoint(const char* dpName);
 
 VitoWiFi_setProtocol(P300);
 
@@ -77,6 +73,17 @@ class LogPrinter : public Print {
 
 LogPrinter logPrinter;
 
+IDatapoint* getDatapoint(const char* dpName) {
+  const std::vector<IDatapoint*>& v = VitoTempAussen.getCollection();
+  IDatapoint* datapoint = nullptr;
+  for (uint8_t i = 0; i < (v.size()) && (datapoint == nullptr); ++i) {
+    if (strcmp(dpName, v[i]->getName()) == 0) {
+      datapoint = v[i];
+    }
+  }
+  return datapoint;
+}
+
 void VitoCommandRead() {
   if (strcmp(XdrvMailbox.data, "all") == 0) {
     VitoWiFi.readAll();
@@ -104,13 +111,7 @@ void VitoCommandWriteTimer() {
     char sub_string[XdrvMailbox.data_len];
     (void)ArgV(sub_string, 1);
 
-    const std::vector<IDatapoint*>& v = VitoTempAussen.getCollection();
-    IDatapoint* datapoint = nullptr;
-    for (uint8_t i = 0; i < (v.size()) && (datapoint == nullptr); ++i) {
-      if (strcmp(sub_string, v[i]->getName()) == 0) {
-        datapoint = v[i];
-      }
-    }
+    IDatapoint* datapoint = getDatapoint(sub_string);
 
     if (datapoint != nullptr) {
       cycletime_s ct;
@@ -147,6 +148,40 @@ void VitoCommandRestoreTimer() {
   }
 }
 
+void VitoCommandActivateWWToday() {
+  time_t rawtime;
+  struct tm * timeinfo;
+  time ( &rawtime );
+  timeinfo = localtime ( &rawtime );
+  const char *weekday[] = {"So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"};
+  timeinfo->tm_wday;
+  char dpName[] = "Warmwasser-XX";
+  strcpy(dpName + 11, weekday[0]);
+
+  IDatapoint* datapoint = getDatapoint(dpName);
+
+  if (datapoint != nullptr)
+  {
+    cycletime_s ct;
+    for (uint8_t para = 0; para < 4; ++para) {
+      ct.cycle[para].from_hour = 0xff;
+      ct.cycle[para].from_minute = 0xff;
+      ct.cycle[para].till_hour = 0xff;
+      ct.cycle[para].till_minute = 0xff;
+    }
+    ct.cycle[0].from_hour = 01;
+    ct.cycle[0].from_minute = 00;
+    ct.cycle[0].till_hour = 23;
+    ct.cycle[0].till_minute = 00;
+
+    backupDp = datapoint;
+    backupVal = datapoint->getLastValue();
+
+    VitoWiFi.writeDatapoint(*datapoint, DPValue(ct));
+    ResponseCmndDone();
+  }
+}
+
 void VitoSetCurrentTime() {
   time_t rawtime;
   struct tm * timeinfo;
@@ -166,8 +201,8 @@ void VitoCommandLogOff() {
   ResponseCmndDone();
 }
 
-const char VitoCommandsString[] PROGMEM = "Vito|Read|WriteTimer|RestoreTimer|SetCurrentTime|LogOn|LogOff";
-void (* const VitoCommandsList[])(void) PROGMEM = { &VitoCommandRead, &VitoCommandWriteTimer, &VitoCommandRestoreTimer, &VitoSetCurrentTime, &VitoCommandLogOn, &VitoCommandLogOff };
+const char VitoCommandsString[] PROGMEM = "Vito|Read|WriteTimer|RestoreTimer|ActivateWWToday|SetCurrentTime|LogOn|LogOff";
+void (* const VitoCommandsList[])(void) PROGMEM = { &VitoCommandRead, &VitoCommandWriteTimer, &VitoCommandRestoreTimer, &VitoCommandActivateWWToday, &VitoSetCurrentTime, &VitoCommandLogOn, &VitoCommandLogOff };
 
 void globalCallbackHandler(const class IDatapoint& dp, class DPValue value) {
   char value_str[60] = {0};
