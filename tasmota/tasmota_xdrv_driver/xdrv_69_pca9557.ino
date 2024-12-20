@@ -360,7 +360,7 @@ uint32_t PCA9557TemplateGpio(void) {
 void PCA9557ModuleInit(void) {
   int32_t pins_needed = PCA9557TemplateGpio();
   if (!pins_needed) {
-    AddLog(LOG_LEVEL_DEBUG, PSTR("PCA: Invalid template"));
+    AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PCA: Invalid template"));
     return;
   }
 
@@ -526,6 +526,9 @@ bool Xdrv69(uint32_t function) {
         break;
       case FUNC_ADD_SWITCH:
         result = PCA9557AddSwitch();
+        break;
+      case FUNC_ACTIVE:
+        result = true;
         break;
     }
   }

@@ -20,7 +20,9 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include <core_version.h>
+#if __has_include("core_version.h")         // ESP32 Stage has no core_version.h file. Disable include via PlatformIO Option
+#include <core_version.h>                   // Arduino_Esp8266 version information (ARDUINO_ESP8266_RELEASE and ARDUINO_ESP8266_RELEASE_2_7_1)
+#endif  // ESP32_STAGE
 
 #ifndef wificlientlightbearssl_h
 #define wificlientlightbearssl_h
@@ -131,6 +133,7 @@ class WiFiClientSecure_light : public WiFiClient {
     }
 
   private:
+    uint32_t _loopTimeout=5000;
     void _clear();
     bool _ctx_present;
     std::shared_ptr<br_ssl_client_context> _sc;
@@ -149,12 +152,7 @@ class WiFiClientSecure_light : public WiFiClient {
     bool _insecure;                   // force fingerprint
     const uint8_t *_fingerprint1;          // fingerprint1 to be checked against
     const uint8_t *_fingerprint2;          // fingerprint2 to be checked against
-// **** Start patch Castellucci
-/*
     uint8_t _recv_fingerprint[20];   // fingerprint received
-*/
-    uint8_t _recv_fingerprint[21];   // fingerprint received
-// **** End patch Castellucci
 
     unsigned char *_recvapp_buf;
     size_t _recvapp_len;

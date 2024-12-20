@@ -25,13 +25,14 @@
 /*********************************************************************************************\
  * Support the following Shangai Belling energy sensors:
  *
- * BL0942 - Energy (as in Shelly Plus1PMMini)
- * Template {"NAME":"Shelly Plus1PMMini","GPIO":[576,32,0,4736,0,224,3200,8161,0,0,192,0,0,0,0,0,0,0,0,0,0,0],"FLAG":0,"BASE":1,"CMND":"AdcParam1 2,5600,4700,3350}
- * Template {"NAME":"Shelly PlusPMMini","GPIO":[576,32,0,4736,0,0,3200,8161,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"FLAG":0,"BASE":1,"CMND":"AdcParam1 2,5600,4700,3350}
+ * BL0942 - Energy (as in Shelly Gen3)
+ * {"NAME":"Shelly 1PM Gen3","GPIO":[0,32,0,4736,224,0,3200,8161,576,1,192,0,0,0,0,0,0,0,0,1,1,1],"FLAG":0,"BASE":1,"CMND":"AdcGpio3 10000,10000,4000"}
+ * {"NAME":"Shelly Plus1PMMini","GPIO":[576,32,0,4736,0,224,3200,8161,0,0,192,0,0,0,0,0,0,0,0,0,0,0],"FLAG":0,"BASE":1,"CMND":"AdcParam1 2,5600,4700,3350}
+ * {"NAME":"Shelly PlusPMMini","GPIO":[576,32,0,4736,0,0,3200,8161,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"FLAG":0,"BASE":1,"CMND":"AdcParam1 2,5600,4700,3350}
  * Based on datasheet from https://datasheet.lcsc.com/lcsc/2110191830_BL-Shanghai-Belling-BL0942_C2909509.pdf
  * 
  * BL0940 - Energy (as in Blitzwolf SHP10)
- * Template {"NAME":"BW-SHP10","GPIO":[0,148,0,207,158,21,0,0,0,17,0,0,0],"FLAG":0,"BASE":18}
+ * {"NAME":"BW-SHP10","GPIO":[0,148,0,207,158,21,0,0,0,17,0,0,0],"FLAG":0,"BASE":18}
  * Based on datasheet from http://www.belling.com.cn/media/file_object/bel_product/BL09XX/datasheet/BL09XX_V1.1_en.pdf
  *
  * BL0939 - Energy (as in Sonoff Dual R3 v2)
@@ -44,26 +45,48 @@
 
 //#define DEBUG_BL09XX
 
+#ifndef BL0939_PREF
 #define BL0939_PREF                 713       // =(4046*1*0,51*1000)/(1,218*1,218*(390*5+0,51)) = 713,105
+#endif
+#ifndef BL0939_UREF
 #define BL0939_UREF                 17159     // =(79931*0,51*1000)/(1,218*(390*5+0,51)) = 17158,92
+#endif
+#ifndef BL0939_IREF
 #define BL0939_IREF                 266013    // =(324004*1)/1,218 = 266013,14
+#endif
 
+#ifndef BL0940_PREF
 #define BL0940_PREF                 1430
+#endif
+#ifndef BL0940_UREF
 #define BL0940_UREF                 33000
+#endif
+#ifndef BL0940_IREF
 #define BL0940_IREF                 275000
+#endif
 
+#ifndef BL0942_PREF
 #define BL0942_PREF                 596
+#endif
+#ifndef BL0942_UREF
 #define BL0942_UREF                 15187
+#endif
+#ifndef BL0942_IREF
 #define BL0942_IREF                 251213
+#endif
 
+#ifndef BL09XX_WRITE_COMMAND
 #define BL09XX_WRITE_COMMAND        0xA0  // 0xA8 according to documentation
+#endif
 #define BL09XX_REG_I_FAST_RMS_CTRL  0x10
 #define BL09XX_REG_MODE             0x18
 #define BL09XX_REG_SOFT_RESET       0x19
 #define BL09XX_REG_USR_WRPROT       0x1A
 #define BL09XX_REG_TPS_CTRL         0x1B
 
+#ifndef BL09XX_READ_COMMAND
 #define BL09XX_READ_COMMAND         0x50  // 0x58 according to documentation
+#endif
 #define BL09XX_FULL_PACKET          0xAA
 
 #define BL09XX_PACKET_HEADER        0x55  // 0x58 according to documentation
@@ -102,6 +125,7 @@ struct BL09XX {
   uint8_t address = 0;
   uint8_t model = 0;
   uint8_t rx_pin;
+  bool support_negative = 0;
   bool received = false;
 } Bl09XX;
 
@@ -187,11 +211,15 @@ bool Bl09XXDecode42(void) {
   Bl09XX.voltage    = Bl09XX.rx_buffer[6] << 16 | Bl09XX.rx_buffer[5] << 8 | Bl09XX.rx_buffer[4];        // V_RMS unsigned
   Bl09XX.current[0] = Bl09XX.rx_buffer[3]  << 16 | Bl09XX.rx_buffer[2]  << 8 | Bl09XX.rx_buffer[1];      // IA_RMS unsigned
 
-//  Bl09XX.power[0]   = Bl09XX.rx_buffer[12] << 16 | Bl09XX.rx_buffer[11] << 8 | Bl09XX.rx_buffer[10];     // WATT_A signed
-//  if (bitRead(Bl09XX.power[0], 23)) { Bl09XX.power[0] |= 0xFF000000; }                                   // Extend sign bit
-  // Above reverted in favour of https://github.com/arendst/Tasmota/issues/15374#issuecomment-1105293179
-  int32_t tmp = Bl09XX.rx_buffer[12] << 24 | Bl09XX.rx_buffer[11] << 16 | Bl09XX.rx_buffer[10] << 8;     // WATT_A signed
-  Bl09XX.power[0] = abs(tmp >> 8);
+
+  if (Bl09XX.support_negative) {
+    Bl09XX.power[0]   = Bl09XX.rx_buffer[12] << 16 | Bl09XX.rx_buffer[11] << 8 | Bl09XX.rx_buffer[10];   // WATT_A signed
+    if (bitRead(Bl09XX.power[0], 23)) { Bl09XX.power[0] |= 0xFF000000; }                                 // Extend sign bit
+    // Above reverted in favour of https://github.com/arendst/Tasmota/issues/15374#issuecomment-1105293179
+  } else {
+    int32_t tmp = Bl09XX.rx_buffer[12] << 24 | Bl09XX.rx_buffer[11] << 16 | Bl09XX.rx_buffer[10] << 8;   // WATT_A signed
+    Bl09XX.power[0] = abs(tmp >> 8);
+  }
 
 #ifdef DEBUG_BL09XX
   AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("BL9: U %d, I %d, P %d"),
@@ -307,6 +335,9 @@ void Bl09XXInit(void) {
     if (Bl09XXSerial->hardwareSerial()) {
       ClaimSerial();
     }
+#ifdef ESP32
+    AddLog(LOG_LEVEL_DEBUG, PSTR("BL9: Serial UART%d"), Bl09XXSerial->getUart());
+#endif
     if (HLW_UREF_PULSE == EnergyGetCalibration(ENERGY_VOLTAGE_CALIBRATION)) {
       for (uint32_t i = 0; i < 2; i++) {
         EnergySetCalibration(ENERGY_POWER_CALIBRATION, bl09xx_pref[Bl09XX.model], i);
@@ -358,7 +389,9 @@ void Bl09XXPreInit(void) {
     else if (PinUsed(GPIO_BL0942_RX, GPIO_ANY)) {
       Bl09XX.model = BL0942_MODEL;
       Bl09XX.rx_pin = Pin(GPIO_BL0942_RX, GPIO_ANY);
-      uint32_t baudrate = GetPin(Bl09XX.rx_pin) - AGPIO(GPIO_BL0942_RX);  // 0 .. 3
+      uint32_t option = GetPin(Bl09XX.rx_pin) - AGPIO(GPIO_BL0942_RX);  // 0 .. 7
+      Bl09XX.support_negative = (option > 3);        // 4 .. 7
+      uint32_t baudrate = option & 0x3;              // 0 .. 3 and 4 .. 7
       Bl09XX.baudrate <<= baudrate;                  // Support 1 (4800), 2 (9600), 3 (19200), 4 (38400)
     }
     if (Bl09XX.model != BL09XX_MODEL) {
@@ -383,19 +416,24 @@ bool Bl09XXCommand(void) {
   uint32_t channel = (2 == XdrvMailbox.index) && (Energy->phase_count > 1) ? 1 : 0;
   uint32_t value = (uint32_t)(CharToFloat(XdrvMailbox.data) * 100);  // 1.23 = 123
 
-  if (CMND_POWERSET == Energy->command_code) {
+  if ((CMND_POWERCAL == Energy->command_code) ||
+      (CMND_VOLTAGECAL == Energy->command_code) ||
+      (CMND_CURRENTCAL == Energy->command_code)) {
+    // Service in xdrv_03_energy.ino
+  }
+  else if (CMND_POWERSET == Energy->command_code) {                  // xxx.xx W
     if (XdrvMailbox.data_len && Bl09XX.power[channel]) {
       XdrvMailbox.payload = (Bl09XX.power[channel] * 100) / value;
     }
   }
-  else if (CMND_VOLTAGESET == Energy->command_code) {
+  else if (CMND_VOLTAGESET == Energy->command_code) {                // xxx.xx V
     if (XdrvMailbox.data_len && Bl09XX.voltage) {
       XdrvMailbox.payload = (Bl09XX.voltage * 100) / value;
     }
   }
-  else if (CMND_CURRENTSET == Energy->command_code) {
+  else if (CMND_CURRENTSET == Energy->command_code) {                // xxx.xx mA
     if (XdrvMailbox.data_len && Bl09XX.current[channel]) {
-      XdrvMailbox.payload = (Bl09XX.current[channel] * 100) / value;
+      XdrvMailbox.payload = ((Bl09XX.current[channel] * 100) / value) * 1000;
     }
   }
   else serviced = false;  // Unknown command
