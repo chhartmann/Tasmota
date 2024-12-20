@@ -27,6 +27,16 @@
 #endif
 #define USE_MI_ESP32
 
+#ifdef USE_RC_SWITCH
+  #undef USE_RC_SWITCH
+#endif
+#define USE_RC_SWITCH
+
+#ifdef USE_RF_SENSOR
+  #undef USE_RF_SENSOR
+#endif
+#define USE_RF_SENSOR
+
 
 #define USE_ETHERNET
 #define USE_WT32_ETH01                         // Add support for Wireless-Tag WT32-ETH01
